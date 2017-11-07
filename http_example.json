@@ -1,0 +1,126 @@
+{
+  "Description": "Template to launch an Amazon Linux instance.",
+  "Parameters": {
+    "InstanceType": {
+      "Type": "String",
+      "Default": "t2.micro",
+      "Description": "Instance type. Default is t2.micro."
+    },
+    "KeyName": {
+      "Type": "String",
+      "Description": "Key pair name that has been associated with this instance. Note: Name is required"
+    }
+  },
+  "Mappings": {
+      "RegionMap" : {
+          "us-east-1"      : { "AMI" : "ami-a4c7edb2" },
+          "us-west-1"      : { "AMI" : "ami-327f5352" },
+          "us-west-2"      : { "AMI" : "ami-6df1e514" },
+          "eu-west-1"      : { "AMI" : "ami-d7b9a2b1" },
+          "sa-east-1"      : { "AMI" : "ami-87dab1eb" },
+          "ap-southeast-1" : { "AMI" : "ami-77af2014" },
+          "ap-southeast-2" : { "AMI" : "ami-10918173" },
+          "ap-northeast-1" : { "AMI" : "ami-3bd3c45c" }
+      }
+  },
+  "Resources": {
+    "Ec2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId":  {"Fn::FindInMap":["RegionMap", {"Ref" : "AWS::Region" }, "AMI" ]},
+        "InstanceType": { "Ref": "InstanceType" },
+        "KeyName": { "Ref": "KeyName" },
+        "SecurityGroups": [ { "Ref": "WebSecurityGroup" } ],
+        "UserData": {
+          "Fn::Base64": { "Fn::Join": [ "", [
+                "#!/bin/bash -v\n",
+                "# Make certain that cfn itself is up to date \n",
+                "yum update -y aws-cfn-bootstrap \n",
+
+                "# Helper function\n",
+                "function error_exit\n",
+                "{\n",
+                "  /opt/aws/bin/cfn-signal -e 1 -r \"$1\" '", { "Ref": "WaitHandle" }, "'\n",
+                "  exit 1\n",
+                "}\n",
+
+                "# install and start httpd \n",
+                "yum install -y httpd || error_exit 'Failed to install Apache' \n",
+                "/sbin/service httpd start || error_exit 'Failed to start Apache' \n",
+
+                "# We got here without issues (except as signaled), so signal success\n",
+                "/opt/aws/bin/cfn-signal -e 0 -r \"User data script complete\" '", { "Ref": "WaitHandle" }, "'\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "WebSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable tcp access for Web and SSH traffic from outside",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "WaitHandle": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle"
+    },
+    "WaitCondition": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "DependsOn": "Ec2Instance",
+      "Properties": {
+        "Handle": { "Ref": "WaitHandle" },
+        "Timeout": "300"
+      }
+    }
+  },
+  "Outputs": {
+    "InstanceId": {
+      "Description": "Instance ID of the Web Server",
+      "Value": {
+        "Ref": "Ec2Instance"
+      }
+    },
+    "AZ": {
+      "Description": "Instances is running in Availability Zone ",
+      "Value": {
+        "Fn::GetAtt": [
+          "Ec2Instance",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PublicIP": {
+      "Description": "Public IP",
+      "Value": {
+        "Fn::GetAtt": [
+          "Ec2Instance",
+          "PublicIp"
+        ]
+      }
+    },
+    "PublicDNS": {
+      "Description": "Instance Public DNS Name",
+      "Value": {
+        "Fn::GetAtt": [
+          "Ec2Instance",
+          "PublicDnsName"
+        ]
+      }
+    }
+  }
+}
